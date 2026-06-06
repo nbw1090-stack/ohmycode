@@ -42,8 +42,8 @@ class ChatArea(TextArea):
 
     def add_user_message(self, text: str) -> None:
         """添加用户消息到聊天记录。"""
-        self._append(f"[bold cyan]你:[/] {text}\n\n")
+        self._append(f"你: {text}\n\n")
 
     def add_agent_message(self, text: str) -> None:
         """添加 Agent 消息到聊天记录。"""
-        self._append(f"[bold green]助手:[/] {text}\n\n")
+        self._append(f"助手: {text}\n\n")
