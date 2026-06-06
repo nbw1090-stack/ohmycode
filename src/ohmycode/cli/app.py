@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Middle
@@ -71,7 +71,7 @@ class OhmycodeApp(App[None]):
     提供全功能的终端聊天界面，支持：
     - 逐 token 流式显示 Agent 回复
     - 实时状态栏（空闲/思考中/执行工具中）
-    - 工具调用详情面板
+    - 工具调用详情面板（调用参数 + 返回结果）
     - 键盘快捷键（ESC 退出）
     """
 
@@ -125,7 +125,14 @@ class OhmycodeApp(App[None]):
         self.run_worker(self._run_agent(), exclusive=True)
 
     async def _run_agent(self) -> None:
-        """异步运行 Agent，流式显示回复。"""
+        """异步运行 Agent，逐 token 流式显示回复，展示工具调用和思考过程。
+
+        流式处理逻辑：
+        1. "messages" 流：AIMessageChunk 的 content → 逐 token 追加到 ChatArea
+        2. "updates" 流：
+           - node=="agent" → AIMessage 包含 tool_calls 时记录到 ToolPanel
+           - node=="tools" → ToolMessage 记录工具返回结果到 ToolPanel
+        """
         status = self.query_one(StatusBar)
         chat_area = self.query_one(ChatArea)
         tool_panel = self.query_one(ToolPanel)
@@ -135,44 +142,85 @@ class OhmycodeApp(App[None]):
         input_widget.disabled = True
         status.agent_state = AgentState.THINKING
 
+        # 追踪状态
+        tool_call_seq: dict[str, int] = {}  # tool_call_id → call_seq 序号
+        full_response = ""
+        streaming_started = False
+
         try:
-            full_response = ""
             async for event_name, event_data in self.agent_graph.astream(
                 {"messages": self._conversation},
                 stream_mode=["messages", "updates"],
                 version="v2",
             ):
+
+                # ===== 实时 token 流 =====
                 if event_name == "messages":
-                    # event_data 是 (AIMessageChunk, metadata_dict)
                     if not isinstance(event_data, tuple) or len(event_data) != 2:
                         continue
                     msg, metadata = event_data
+
+                    # 只处理 agent 节点输出的文本内容
                     if (
                         msg
                         and hasattr(msg, "content")
                         and msg.content
                         and metadata.get("langgraph_node") == "agent"
                     ):
+                        if not streaming_started:
+                            chat_area.start_agent_message()
+                            streaming_started = True
+                        chat_area.append_agent_token(msg.content)
                         full_response += msg.content
 
+                # ===== 状态更新流 =====
                 elif event_name == "updates":
-                    # event_data 是 {node_name: {state_dict}}
                     for node_name, state in event_data.items():
-                        if node_name == "tools":
-                            status.agent_state = AgentState.EXECUTING
+
+                        if node_name == "agent":
+                            status.agent_state = AgentState.THINKING
                             messages = state.get("messages", [])
+
                             for m in messages:
-                                if isinstance(m, AIMessage) and m.tool_calls:
+                                if not isinstance(m, AIMessage):
+                                    continue
+
+                                # 处理工具调用
+                                if m.tool_calls:
                                     for tc in m.tool_calls:
-                                        tool_panel.add_tool_call(
+                                        seq = tool_panel.add_tool_call(
                                             tc["name"], tc.get("args", {})
                                         )
-                        elif node_name == "agent":
-                            status.agent_state = AgentState.THINKING
+                                        # 记录 tool_call_id → seq 映射
+                                        tool_call_seq[tc.get("id", "")] = seq
 
-            # 流式响应结束，写入完整回复
+                                # 如果有文本内容（思考/推理）且流式尚未开始
+                                if m.content and not streaming_started:
+                                    chat_area.start_agent_message()
+                                    streaming_started = True
+                                    chat_area.append_agent_token(m.content)
+                                    full_response += m.content
+
+                        elif node_name == "tools":
+                            status.agent_state = AgentState.EXECUTING
+                            messages = state.get("messages", [])
+
+                            for m in messages:
+                                if isinstance(m, ToolMessage):
+                                    # 通过 tool_call_id 查找对应的调用序号
+                                    call_id = getattr(m, "tool_call_id", "")
+                                    seq = tool_call_seq.get(call_id, 0)
+                                    tool_name = getattr(m, "name", "unknown")
+                                    tool_panel.add_tool_result(
+                                        seq, tool_name, m.content
+                                    )
+
+            # 流式输出结束
+            if streaming_started:
+                chat_area.finish_agent_message()
+
+            # 保存完整回复到对话历史
             if full_response:
-                chat_area.add_agent_message(full_response)
                 self._conversation.append(AIMessage(content=full_response))
 
         except Exception as e:
