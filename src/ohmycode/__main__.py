@@ -23,7 +23,7 @@ from ohmycode.context.providers.environment import EnvironmentContextProvider
 from ohmycode.context.providers.identity import IdentityContextProvider
 from ohmycode.context.providers.tool_docs import ToolDocsContextProvider
 from ohmycode.llm.openai_provider import OpenAILLMProvider
-from ohmycode.tools.stubs import StubToolProvider
+from ohmycode.tools.builtins import BuiltinToolProvider
 
 
 def main() -> None:
@@ -40,7 +40,8 @@ def main() -> None:
     llm_provider = OpenAILLMProvider(settings.llm)
 
     # 4. 创建工具 Provider
-    tool_provider = StubToolProvider(enabled=settings.tools.enabled)
+    enabled = settings.tools.enabled or None  # 空列表 → None（启用全部）
+    tool_provider = BuiltinToolProvider(enabled=enabled)
     all_tools = tool_provider.tools()
 
     # 5. 创建上下文 Provider

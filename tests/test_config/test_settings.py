@@ -64,7 +64,7 @@ class TestSettings:
         """默认配置应包含正确的非 LLM 默认值。"""
         settings = Settings()
         assert settings.agent.recursion_limit == 25
-        assert "echo" in settings.tools.enabled
+        assert settings.tools.enabled == []  # 空列表表示启用全部工具
 
     def test_from_toml_nonexistent_file(self):
         """加载不存在的文件应返回默认配置。"""

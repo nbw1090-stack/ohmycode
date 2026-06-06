@@ -50,7 +50,7 @@ class AgentSettings:
 @dataclass
 class ToolSettings:
     """工具相关配置。"""
-    enabled: list[str] = field(default_factory=lambda: ["echo", "read_file", "list_files"])
+    enabled: list[str] = field(default_factory=list)  # 空=全部启用，否则只启用列表中的工具
 
 
 @dataclass
