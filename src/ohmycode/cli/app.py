@@ -72,14 +72,13 @@ class OhmycodeApp(App[None]):
     - 逐 token 流式显示 Agent 回复
     - 实时状态栏（空闲/思考中/执行工具中）
     - 工具调用详情面板
-    - 键盘快捷键（Ctrl+Q 退出）
+    - 键盘快捷键（ESC 退出）
     """
 
     TITLE = "ohmycode"
     CSS_PATH = "styles/app.tcss"
 
     BINDINGS = [
-        Binding("ctrl+q", "quit", "退出", priority=True),
         Binding("escape", "request_quit", "退出", priority=True),
     ]
 
