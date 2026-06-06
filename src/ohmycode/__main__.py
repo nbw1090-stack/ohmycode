@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from ohmycode.assembler import Assembler
 from ohmycode.cli.app import OhmycodeApp
 from ohmycode.config.settings import Settings
+from ohmycode.context.providers.environment import EnvironmentContextProvider
 from ohmycode.context.providers.identity import IdentityContextProvider
 from ohmycode.context.providers.tool_docs import ToolDocsContextProvider
 from ohmycode.llm.openai_provider import OpenAILLMProvider
@@ -45,6 +46,7 @@ def main() -> None:
     # 5. 创建上下文 Provider
     context_providers = [
         IdentityContextProvider(),
+        EnvironmentContextProvider(model_name=settings.llm.model),
         ToolDocsContextProvider(all_tools),
     ]
 

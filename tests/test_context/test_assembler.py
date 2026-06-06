@@ -69,13 +69,15 @@ class TestCollectContextSnippets:
 
 class TestIdentityContextProvider:
 
-    def test_provides_identity_part(self):
-        """IdentityContextProvider 应提供身份段落。"""
+    def test_provides_identity_parts(self):
+        """IdentityContextProvider 应提供多个身份与行为规范段落。"""
         provider = IdentityContextProvider()
         parts = provider.system_prompt_parts()
-        assert len(parts) == 1
-        assert parts[0].name == "identity"
-        assert parts[0].priority == 10
+        assert len(parts) == 4
+        names = [p.name for p in parts]
+        assert names == ["intro", "system", "doing_tasks", "executing_actions"]
+        priorities = [p.priority for p in parts]
+        assert priorities == [10, 20, 30, 40]
         assert "ohmycode" in parts[0].content
 
     def test_no_context_snippets(self):
