@@ -11,10 +11,18 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
+
+
+# ===== 运行时审批回调 =====
+
+# TUI 启动时设置，用于在执行破坏性工具前弹出审批弹窗。
+# 签名: async (tool_name: str, args: dict) -> bool
+# 返回 True=允许执行，False=拒绝执行
+TOOL_APPROVAL_HANDLER: Callable[[str, dict], Awaitable[bool]] | None = None
 
 
 # ===== 结果数据类型 =====
@@ -203,6 +211,11 @@ def build_tool(definition: ToolDefinition) -> StructuredTool:
         return result
 
     async def _arun(**kwargs: Any) -> str:
+        # 破坏性工具审批：如果设置了审批回调且工具是破坏性的，先请求用户批准
+        if definition.is_destructive and TOOL_APPROVAL_HANDLER is not None:
+            approved = await TOOL_APPROVAL_HANDLER(definition.name, kwargs)
+            if not approved:
+                return f"操作被用户拒绝: {definition.name}"
         return _run(**kwargs)
 
     return StructuredTool.from_function(

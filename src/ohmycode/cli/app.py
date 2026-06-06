@@ -1,5 +1,6 @@
 """Textual TUI 主应用。"""
 
+import asyncio
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -9,10 +10,11 @@ from textual.containers import Center, Middle
 from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Header, Label, TextArea
 
+from ohmycode.cli.widgets.approval_dialog import ApprovalDialog
 from ohmycode.cli.widgets.chat_area import ChatArea
 from ohmycode.cli.widgets.input_bar import InputBar
 from ohmycode.cli.widgets.status_bar import StatusBar
-from ohmycode.cli.widgets.tool_panel import ToolPanel
+from ohmycode.tools import base as tool_base
 from ohmycode.types import AgentState
 
 
@@ -87,11 +89,11 @@ class OhmycodeApp(App[None]):
         self.agent_graph = agent_graph
         self.model_name = model_name
         self._conversation: list = []
+        self._approved_tools: set[str] = set()  # 本次会话已"始终允许"的工具
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield ChatArea()
-        yield ToolPanel()
         yield StatusBar()
         yield InputBar()
         yield Footer()
@@ -130,12 +132,11 @@ class OhmycodeApp(App[None]):
         流式处理逻辑：
         1. "messages" 流：AIMessageChunk 的 content → 逐 token 追加到 ChatArea
         2. "updates" 流：
-           - node=="agent" → AIMessage 包含 tool_calls 时记录到 ToolPanel
-           - node=="tools" → ToolMessage 记录工具返回结果到 ToolPanel
+           - node=="agent" → AIMessage 包含 tool_calls 时挂载 ToolCallCard
+           - node=="tools" → ToolMessage 更新 ToolCallCard 结果
         """
         status = self.query_one(StatusBar)
         chat_area = self.query_one(ChatArea)
-        tool_panel = self.query_one(ToolPanel)
         input_widget = self.query_one("#user-input", TextArea)
 
         # 禁用输入
@@ -143,9 +144,36 @@ class OhmycodeApp(App[None]):
         status.agent_state = AgentState.THINKING
 
         # 追踪状态
-        tool_call_seq: dict[str, int] = {}  # tool_call_id → call_seq 序号
+        tool_call_map: dict[str, str] = {}  # tool_call_id → card_id
         full_response = ""
         streaming_started = False
+
+        # 注册工具审批回调（直接写入 base 模块变量，避免 import 副本问题）
+        app_ref = self
+
+        async def _approval_handler(tool_name: str, args: dict) -> bool:
+            """审批回调：检查是否需要弹窗，如需要则等待用户决定。"""
+            # 如果该工具已被"始终允许"，直接放行
+            if tool_name in app_ref._approved_tools:
+                return True
+
+            # 通过 Future 等待弹窗结果
+            future: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+
+            def on_dialog_result(result: bool | tuple) -> None:
+                if isinstance(result, tuple) and result == ApprovalDialog.ALWAYS_ALLOW:
+                    # 用户选择"始终允许"，记录该工具
+                    app_ref._approved_tools.add(tool_name)
+                    future.set_result(True)
+                elif result is True:
+                    future.set_result(True)
+                else:
+                    future.set_result(False)
+
+            app_ref.push_screen(ApprovalDialog(tool_name, args), on_dialog_result)
+            return await future
+
+        tool_base.TOOL_APPROVAL_HANDLER = _approval_handler
 
         try:
             async for event_name, event_data in self.agent_graph.astream(
@@ -187,12 +215,16 @@ class OhmycodeApp(App[None]):
 
                                 # 处理工具调用
                                 if m.tool_calls:
+                                    # 先结束当前流式消息（如有）
+                                    if streaming_started:
+                                        chat_area.finish_agent_message()
+                                        streaming_started = False
+
                                     for tc in m.tool_calls:
-                                        seq = tool_panel.add_tool_call(
+                                        card_id = chat_area.mount_tool_card(
                                             tc["name"], tc.get("args", {})
                                         )
-                                        # 记录 tool_call_id → seq 映射
-                                        tool_call_seq[tc.get("id", "")] = seq
+                                        tool_call_map[tc.get("id", "")] = card_id
 
                                 # 如果有文本内容（思考/推理）且流式尚未开始
                                 if m.content and not streaming_started:
@@ -207,13 +239,13 @@ class OhmycodeApp(App[None]):
 
                             for m in messages:
                                 if isinstance(m, ToolMessage):
-                                    # 通过 tool_call_id 查找对应的调用序号
                                     call_id = getattr(m, "tool_call_id", "")
-                                    seq = tool_call_seq.get(call_id, 0)
+                                    card_id = tool_call_map.get(call_id, "")
                                     tool_name = getattr(m, "name", "unknown")
-                                    tool_panel.add_tool_result(
-                                        seq, tool_name, m.content
-                                    )
+                                    if card_id:
+                                        chat_area.update_tool_result(
+                                            card_id, m.content
+                                        )
 
             # 流式输出结束
             if streaming_started:
@@ -226,6 +258,8 @@ class OhmycodeApp(App[None]):
         except Exception as e:
             chat_area.add_agent_message(f"[red]错误: {e}[/red]")
         finally:
+            # 清除审批回调
+            tool_base.TOOL_APPROVAL_HANDLER = None
             status.agent_state = AgentState.IDLE
             input_widget.disabled = False
             input_widget.focus()
