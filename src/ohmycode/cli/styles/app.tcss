@@ -1,0 +1,4 @@
+Screen {
+    layout: vertical;
+    background: $surface;
+}

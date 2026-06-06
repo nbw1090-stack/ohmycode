@@ -1,0 +1,5 @@
+[agent]
+recursion_limit = 25
+
+[tools]
+enabled = ["echo", "read_file", "list_files"]
