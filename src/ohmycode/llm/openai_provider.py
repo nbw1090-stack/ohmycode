@@ -2,7 +2,14 @@
 
 封装 langchain-openai 的 ChatOpenAI，实现 LLMProvider 协议。
 所有配置（API Key、模型名等）从环境变量读取。
+
+包含 OpenTelemetry Tracing 和 Metrics 埋点：
+- 每次 LLM 调用创建 span，记录 model 和 token 用量
+- Token 用量通过 Counter 指标累加
+- LLM 调用延迟通过 Histogram 指标记录
 """
+
+import time
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
@@ -10,6 +17,11 @@ from langchain_openai import ChatOpenAI
 
 from ohmycode.config.settings import LLMSettings
 from ohmycode.llm.protocols import LLMProvider
+from ohmycode.observability.tracing import get_tracer, record_token_usage as record_token_span
+from ohmycode.observability.metrics import (
+    record_token_usage as record_token_metrics,
+    get_llm_duration,
+)
 
 
 class OpenAILLMProvider:
@@ -29,6 +41,7 @@ class OpenAILLMProvider:
         """返回配置好的 ChatOpenAI 实例。
 
         如果提供了 tools，会自动绑定到模型上，使其具备工具调用能力。
+        返回的模型包装了 OTel Tracing 回调，记录每次调用的 token 用量和延迟。
 
         Args:
             tools: 可选的工具列表，绑定到 LLM

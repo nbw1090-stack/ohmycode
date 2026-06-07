@@ -3,3 +3,16 @@ recursion_limit = 25
 
 [tools]
 enabled = []
+
+# ===== 可观测性配置 =====
+# 基于 OpenTelemetry，默认关闭。启用后使用 ConsoleExporter 输出到终端。
+# 环境变量可覆盖 TOML 配置（优先级更高）：
+#   OHMYCODE_OBS_ENABLED       — 是否启用（true/false）
+#   OHMYCODE_OBS_EXPORTER_TYPE — 导出器类型（console/otlp）
+#   OHMYCODE_OBS_LOG_LEVEL     — 日志级别（DEBUG/INFO/WARNING/ERROR）
+#   OHMYCODE_OBS_SERVICE_NAME  — 服务名称
+[observability]
+enabled = true
+exporter_type = "console"   # console（默认）或 otlp（需外部服务）
+log_level = "INFO"          # DEBUG / INFO / WARNING / ERROR
+service_name = "ohmycode"   # OTel Resource 服务标识
