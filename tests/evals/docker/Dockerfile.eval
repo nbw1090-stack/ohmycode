@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 先复制依赖文件，利用 Docker 层缓存
+COPY pyproject.toml .
+COPY src/ohmycode/ src/ohmycode/
+
+# 安装项目及 dev 依赖
+RUN pip install --no-cache-dir -e ".[dev]"
+
+# 创建默认工作区
+RUN mkdir -p /workspace
+WORKDIR /workspace
+
+# 默认运行 pytest
+CMD ["pytest", "--version"]

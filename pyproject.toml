@@ -20,6 +20,9 @@ dependencies = [
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
+    "pytest-timeout>=2",
+    "docker>=7",
+    "openai>=1",
 ]
 
 [project.scripts]
@@ -31,3 +34,9 @@ packages = ["src/ohmycode"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "e2e: 端到端测试，调用真实 LLM API（慢，有费用）",
+    "judge: 使用 llm-as-judge 进行主观评估",
+    "security: 安全和权限评估测试（在 Docker 中运行）",
+    "docker: 需要 Docker 环境的测试",
+]
