@@ -3,9 +3,15 @@
 LLM 相关配置从环境变量（.env 文件）读取，非 LLM 配置从 TOML 文件加载。
 """
 
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ohmycode.observability.settings import ObservabilitySettings
 
 try:
     import tomllib
@@ -58,18 +64,20 @@ class Settings:
     """应用全局配置。
 
     LLM 配置始终从环境变量读取。
-    Agent 和工具配置从 TOML 文件加载，缺失字段使用默认值。
+    Agent、工具和可观测性配置从 TOML 文件加载，缺失字段使用默认值。
     """
 
     llm: LLMSettings = field(default_factory=LLMSettings)
     agent: AgentSettings = field(default_factory=AgentSettings)
     tools: ToolSettings = field(default_factory=ToolSettings)
+    observability: ObservabilitySettings | None = field(default=None)
 
     @classmethod
     def from_toml(cls, path: Path) -> "Settings":
         """从 TOML 文件加载非 LLM 配置，缺失的字段使用默认值。
 
         LLM 配置不在此加载，始终从环境变量读取。
+        可观测性配置支持环境变量覆盖 TOML 值。
         """
         if not path.exists():
             return cls()
@@ -79,8 +87,13 @@ class Settings:
 
         agent_data = data.get("agent", {})
         tool_data = data.get("tools", {})
+        obs_data = data.get("observability", {})
+
+        # 延迟导入避免循环依赖
+        from ohmycode.observability.settings import ObservabilitySettings
 
         return cls(
             agent=AgentSettings(**agent_data),
             tools=ToolSettings(**tool_data),
+            observability=ObservabilitySettings.from_dict(obs_data),
         )

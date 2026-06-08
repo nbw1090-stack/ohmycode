@@ -4,9 +4,11 @@
 1. 加载 .env 环境变量
 2. 加载配置（从 defaults.toml）
 3. 创建各模块的 Provider
-4. 通过 Assembler 装配所有模块
-5. 构建 Agent 图
-6. 启动 Textual TUI
+4. 初始化可观测性（如已启用）
+5. 通过 Assembler 装配所有模块
+6. 构建 Agent 图
+7. 启动 Textual TUI
+8. 关闭时清理可观测性资源
 
 用法: python -m ohmycode
 """
@@ -51,12 +53,21 @@ def main() -> None:
         ToolDocsContextProvider(all_tools),
     ]
 
-    # 6. 通过 Assembler 装配
+    # 6. 创建可观测性 Provider（如已启用）
+    observability_provider = None
+    obs_settings = settings.observability
+    if obs_settings is not None and obs_settings.enabled:
+        from ohmycode.observability.provider import DefaultObservabilityProvider
+
+        observability_provider = DefaultObservabilityProvider(obs_settings)
+
+    # 7. 通过 Assembler 装配
     assembler = Assembler(
         settings=settings,
         llm_provider=llm_provider,
         context_providers=context_providers,
         tool_providers=[tool_provider],
+        observability_provider=observability_provider,
     )
 
     try:
@@ -65,9 +76,14 @@ def main() -> None:
         print(f"配置错误: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 7. 启动 TUI
+    # 8. 启动 TUI
     app = OhmycodeApp(agent_graph=graph, model_name=settings.llm.model)
-    app.run()
+    try:
+        app.run()
+    finally:
+        # 9. 清理可观测性资源
+        if observability_provider is not None:
+            observability_provider.shutdown()
 
 
 if __name__ == "__main__":
